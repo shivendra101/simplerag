@@ -1,0 +1,7 @@
+anthropic
+dotenv
+fastapi 
+uvicorn 
+pydantic-settings
+google-genai
+asyncpg
