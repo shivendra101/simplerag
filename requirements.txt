@@ -5,3 +5,5 @@ uvicorn
 pydantic-settings
 google-genai
 asyncpg
+langchain_text_splitters
+pymupdf4llm

@@ -32,7 +32,8 @@ class IngestResponseOutput(BaseModel):
     metadata: dict
 
 class IngestRequest(BaseModel):
-    raw_string: str
+    raw_string: str | None = None
+    file_path: str | None = None
 
 async def process_question(question: str, ai_service: AIservice):
     async with REQUEST_SEMAPHORE:
@@ -81,13 +82,25 @@ async def get_response(
         }
     )
 
-@router.post("/ingest_data")
-async def ingest_data(
+@router.post("/ingest_raw_text_data")
+async def ingest_raw_text_data(
     request: IngestRequest,
     ingest_data_service: IngestDataService = Depends(get_ingest_data_service),
 ):
     await ingest_data_service.ingest_text(request.raw_string)
-    pass
+
+
+@router.post("/ingest_raw_file_data")
+async def ingest_raw_file_data(
+    request: IngestRequest,
+    ingest_data_service: IngestDataService = Depends(get_ingest_data_service),
+):
+    if(request.file_path is None):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="file_path is required for this endpoint"
+        )
+    await ingest_data_service.ingest_file(request.file_path)
 
 @router.post("/get_chunk")
 async def get_chunk(
