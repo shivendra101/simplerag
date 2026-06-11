@@ -1,11 +1,12 @@
 from typing import List
 from rag.db_service import DBService
 from rag.embedding_service import EmbeddingService
+from rag.text_chunking_service import TextChunkingService
 from rag.get_chunks_from_text import get_chunks_from_text
 
 import fitz  # PyMuPDF engine
 import pymupdf4llm
-from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
+from langchain_text_splitters import MarkdownHeaderTextSplitter
 
 class IngestDataService:
     def __init__(self, db_service: DBService, embedding_service: EmbeddingService, chunk_size: int = 200, chunk_overlap: int = 50):
@@ -13,6 +14,7 @@ class IngestDataService:
         self.embedding_service = embedding_service
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
+        self.chunking_service = TextChunkingService(default_chunk_size=1000, sentence_overlap=2)
 
     async def ingest_text(self, text: str, source: str = None, metadata: dict = None) -> int:
 
@@ -73,7 +75,6 @@ class IngestDataService:
         ]
 
         header_splitter = MarkdownHeaderTextSplitter(headers_to_split_on=headers_to_split_on, strip_headers=False)
-        final_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
 
         all_final_chunks = []
         chunk_counter = 0
@@ -85,24 +86,29 @@ class IngestDataService:
             for page_num in range(len(doc)):
                 # Convert only ONE specific page to Markdown text
                 page_md = pymupdf4llm.to_markdown(doc, pages=[page_num])
-                
+
                 print(f"page number {page_num + 1}")
                 if not page_md.strip():
                     print(f"Page {page_num + 1} is blank, skipping.")
                     continue  # Skip blank pages
-                    
+
                 # Extract structural markdown blocks for this page
                 page_structural_chunks = header_splitter.split_text(page_md)
-                
-                # Breakdown into smaller embedding-sized text windows
-                page_final_docs = final_splitter.split_documents(page_structural_chunks)
-                
+
+                # Breakdown into smaller chunks using sentence-boundary aware splitting
+                page_final_docs = []
+                for struct_chunk in page_structural_chunks:
+                    sentence_chunks = self.chunking_service.chunk_by_sentences(struct_chunk.page_content)
+                    for sent_chunk in sentence_chunks:
+                        sent_chunk.metadata = struct_chunk.metadata.copy() if struct_chunk.metadata else {}
+                        page_final_docs.append(sent_chunk)
+
                 # Enrich metadata instantly with page numbers to prevent data loss
                 for doc_chunk in page_final_docs:
                     doc_chunk.metadata["source"] = file_path
                     doc_chunk.metadata["page_number"] = page_num + 1
                     doc_chunk.metadata["chunk_index"] = f"{file_path}_p{page_num+1}_c{chunk_counter}"
-                    
+
                     all_final_chunks.append(doc_chunk)
                     chunk_counter += 1
                     await self.ingest_text(doc_chunk.page_content, source=file_path, metadata=doc_chunk.metadata)
@@ -110,45 +116,4 @@ class IngestDataService:
         return len(all_final_chunks)
 
 
-    async def get_chunks(self, source: str = None, limit: int = 100) -> List[dict]:
-        """Retrieve chunks from database."""
-        if source:
-            query = "SELECT id, chunk_text, source, chunk_index, embedding FROM document_vectors WHERE source = $1 LIMIT $2"
-            return await self.db_service.query(query, source, limit)
-        else:
-            query = "SELECT id, chunk_text, source, chunk_index, embedding FROM document_vectors LIMIT $1"
-            return await self.db_service.query(query, limit)
-
-    async def delete_chunks(self, source: str) -> int:
-        """Delete all chunks from a source."""
-        query = "DELETE FROM document_vectors WHERE source = $1"
-        result = await self.db_service.execute(query, source)
-        return result
-
-    async def search_chunks(self, search_text: str, limit: int = 10) -> List[dict]:
-        
-        # get text embedding
-        search_embedding = await self.embedding_service.embed_content(search_text)
-        # perform cosine similarity search using embeddings using postgres vector operations
-        return await self.search_chunks_by_embedding(search_embedding, limit)
-
-    
-    # perform cosine similarity search using embeddings using postgres vector operations
-    async def search_chunks_by_embedding(self, embedding: list, limit: int = 10) -> List[dict]:
-        """Search chunks by embedding similarity."""
-        query = """
-        SELECT id, chunk_text, source, chunk_index
-        FROM document_vectors
-        ORDER BY (embedding <=> $1::vector) ASC
-        LIMIT $2
-        """
-
-        result = await self.db_service.query(query, str(embedding), limit)
-        # get list of chunk_text from result
-        all_chunks = []
-        for row in result:
-            all_chunks.append(row['chunk_text'])
-            print(f"{row['chunk_text']}")
-        
-        return all_chunks
 

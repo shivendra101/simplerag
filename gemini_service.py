@@ -6,10 +6,14 @@ class GeminiService(AIservice):
         self.client = genai.Client(api_key=api_key)
         self.model = model
 
-    async def ask_question(self, question: str) -> str:
+    async def ask_question(self, question: str, context: str = None) -> str:
+        user_content = question
+        if context:
+            user_content = f"Context:\n{context}\n\nQuestion:\n{question}"
+
         response = self.client.models.generate_content(
             model=self.model,
-            input=[{"role": "user", "content": question}]
+            input=[{"role": "user", "content": user_content}]
         )
         return response.candidates[0].content
 

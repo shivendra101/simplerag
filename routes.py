@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from ai_service import AIservice
-from dependencies import get_ai_service, get_ingest_data_service
+from dependencies import get_ai_service, get_ingest_data_service, get_chunk_query_service 
 import asyncio
 import time
 
 from rag.ingest_data_service import IngestDataService
+from rag.chunk_query_service import ChunkQueryService
 
 router = APIRouter()
 
@@ -34,6 +35,9 @@ class IngestResponseOutput(BaseModel):
 class IngestRequest(BaseModel):
     raw_string: str | None = None
     file_path: str | None = None
+
+class GetAnswerRequest(BaseModel):
+    question: str
 
 async def process_question(question: str, ai_service: AIservice):
     async with REQUEST_SEMAPHORE:
@@ -105,6 +109,14 @@ async def ingest_raw_file_data(
 @router.post("/get_chunk")
 async def get_chunk(
     request: IngestRequest,
-    ingest_data_service: IngestDataService = Depends(get_ingest_data_service),
+    chunk_query_service: ChunkQueryService = Depends(get_chunk_query_service),
 ):
-    return await ingest_data_service.search_chunks(request.raw_string)
+    return await chunk_query_service.search_chunks(request.raw_string)
+
+
+@router.post("/get_answer")
+async def get_answer(
+    request: GetAnswerRequest,
+    chunk_query_service: ChunkQueryService = Depends(get_chunk_query_service)
+): 
+    return await chunk_query_service.get_answer_to_query(request.question)

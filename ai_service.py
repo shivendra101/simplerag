@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 
 class AIservice(ABC):
 
-    async def ask_question(self, question: str) -> str:
+    async def ask_question(self, question: str, context: str = None) -> str:
         """Abstract method to ask a question to the AI service."""
         pass
 

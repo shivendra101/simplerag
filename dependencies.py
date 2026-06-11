@@ -9,11 +9,13 @@ from rag.db_service import DBService
 from config.embedding_config import embedding_config
 from rag.embedding_service import EmbeddingService
 from rag.ingest_data_service import IngestDataService
+from rag.chunk_query_service import ChunkQueryService
 
 _active_ai_service: AIservice = None
 _db_service: DBService = None
 _embedding_service: EmbeddingService = None
 _ingest_data_service: IngestDataService = None
+_chunk_query_service: ChunkQueryService = None
 
 def get_ai_service() -> AIservice:
 
@@ -68,3 +70,16 @@ def get_ingest_data_service() -> IngestDataService:
     _ingest_data_service = IngestDataService(db_service=db_service, embedding_service=embedding_service)
 
     return _ingest_data_service
+
+def get_chunk_query_service() -> ChunkQueryService:
+    global _chunk_query_service
+
+    if _chunk_query_service is not None:
+        return _chunk_query_service
+
+    db_service = get_db_service()
+    embedding_service = get_embedding_service()
+    ai_service = get_ai_service()
+    _chunk_query_service = ChunkQueryService(db_service=db_service, embedding_service=embedding_service, ai_service=ai_service)
+
+    return _chunk_query_service
